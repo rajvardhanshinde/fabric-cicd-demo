@@ -48,3 +48,4 @@ jobs:
               --Environment "TEST" \
               --RepositoryDirectory . \
               --ItemsInScope "Notebook,Report,SemanticModel"
+          fi
