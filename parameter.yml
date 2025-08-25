@@ -1,9 +1,5 @@
-environments:
-  - name: "Dev"
-    workspaces:
-      - name: "DevWorkspace"
-        id: "f4d92dfb-fb4f-4b86-9d7f-f9d32f9f7a2a"   # your Dev workspace GUID
-        items:
-          - type: "Notebook"
-            path: "./MyNotebook.ipynb"   # must match repo file
-            name: "MyNotebook"           # name inside Fabric
+items:
+  - type: "Notebook"
+    path: "./MyNotebook.ipynb"
+    name: "MyNotebook"
+    workspaceId: "f4d92dfb-fb4f-4b86-9d7f-f9d32f9f7a2a"
