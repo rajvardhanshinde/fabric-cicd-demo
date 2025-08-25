@@ -1,0 +1,7 @@
+workspaces:
+  - name: "DevWorkspace"
+    id: "f4d92dfb-fb4f-4b86-9d7f-f9d32f9f7a2a"   # Replace with your Fabric workspace GUID
+    items:
+      - type: "Notebook"
+        path: "./MyNotebook.ipynb"   # Path inside your repo
+        name: "MyNotebook"           # Name it will have inside Fabric
