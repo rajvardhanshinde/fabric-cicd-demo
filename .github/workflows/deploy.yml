@@ -1,41 +1,40 @@
 name: Deploy to Fabric Test Workspace
 
 on:
-  workflow_dispatch:   # 👈 lets you run manually from GitHub Actions tab
+  workflow_dispatch:   # manual trigger
 
 jobs:
-  deploy-to-fabric-test:
+  deploy:
     runs-on: ubuntu-latest
 
-    env:
-      resourceUrl: https://api.fabric.microsoft.com
-      FABRIC_WORKSPACE_ID: ${{ secrets.FABRIC_TEST_WORKSPACE_ID }}
-
     steps:
-      - name: Checkout repo
+      # Checkout code from repo
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      # Authenticate to Azure using Service Principal
+      - name: Azure Login
+        uses: azure/login@v2
         with:
-          python-version: '3.11'
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
 
-      - name: Install fabric-cicd tool
+      # Install fabric-cicd python package
+      - name: Install fabric-cicd
         run: pip install fabric-cicd
 
-      - name: Authenticate to Azure
-        shell: pwsh
+      # Get Fabric Token
+      - name: Get Fabric Token
+        id: fabric
         run: |
-          Install-Module -Name Az.Accounts -AllowClobber -Force
-          $SecureStringPwd = ConvertTo-SecureString ${{ secrets.AZURE_CLIENT_SECRET }} -AsPlainText -Force
-          $pscredential = New-Object System.Management.Automation.PSCredential(${{ secrets.AZURE_CLIENT_ID }}, $SecureStringPwd)
-          Connect-AzAccount -ServicePrincipal -Credential $pscredential -Tenant ${{ secrets.AZURE_TENANT_ID }}
-          $fabricToken = (Get-AzAccessToken -ResourceUrl ${{ env.resourceUrl }}).Token
-          echo "FABRIC_TOKEN=$fabricToken" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          FABRIC_TOKEN=$(az account get-access-token --resource "https://api.fabric.microsoft.com" --query accessToken -o tsv)
+          echo "FABRIC_TOKEN=$FABRIC_TOKEN" >> $GITHUB_ENV
 
-      - name: Deploy repo contents to Fabric Test Workspace
+      # Deploy all repo content to Test Workspace
+      - name: Deploy to Fabric Test Workspace
         run: |
-          fabric-cicd deploy_folder \
-            --workspace $FABRIC_WORKSPACE_ID \
-            --path "." \
-            --token $FABRIC_TOKEN
+          python -m fabric_cicd.deployer \
+            --workspace ${{ secrets.FABRIC_TEST_WORKSPACE_ID }} \
+            --path . \
+            --token ${{ env.FABRIC_TOKEN }}
