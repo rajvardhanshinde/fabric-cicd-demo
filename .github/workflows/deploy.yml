@@ -14,7 +14,7 @@ jobs:
       - name: Azure Login
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}   # 👈 this is the JSON you added
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
