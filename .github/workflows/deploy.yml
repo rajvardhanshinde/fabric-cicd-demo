@@ -1,42 +1,35 @@
-name: Deploy to Fabric Test Workspace
+name: Deploy to Fabric Test
 
 on:
   workflow_dispatch:   # manual trigger
-  
+
 
 jobs:
-  deploy:
+  deploy-to-fabric-test:
     runs-on: ubuntu-latest
-
     steps:
-      # Checkout code
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Login to Azure with Service Principal
       - name: Azure Login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          auth-type: SERVICE_PRINCIPAL
 
-      # Install fabric-cicd python package
-      - name: Install fabric-cicd
-        run: pip install fabric-cicd
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-      # Get Fabric Token
-      - name: Get Fabric Token
-        id: fabric
+      - name: Install dependencies
         run: |
-          FABRIC_TOKEN=$(az account get-access-token --resource "https://api.fabric.microsoft.com" --query accessToken -o tsv)
-          echo "FABRIC_TOKEN=$FABRIC_TOKEN" >> $GITHUB_ENV
+          python -m pip install --upgrade pip
+          pip install requests
 
-      # Deploy repo content to Test Workspace
-      - name: Deploy to Fabric Test Workspace
+      - name: Run Fabric Deployment Script
         run: |
-          python -m fabric_cicd.deployer \
+          python auth_spn_secret_AzDo.py \
             --workspace ${{ secrets.FABRIC_TEST_WORKSPACE_ID }} \
-            --path . \
-            --token ${{ env.FABRIC_TOKEN }}
+            --path .
