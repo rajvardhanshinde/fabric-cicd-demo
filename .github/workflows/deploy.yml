@@ -2,23 +2,25 @@ name: Deploy to Fabric Test Workspace
 
 on:
   workflow_dispatch:   # manual trigger
+  
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout code from repo
+      # Checkout code
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Authenticate to Azure using Service Principal
+      # Login to Azure with Service Principal
       - name: Azure Login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          auth-type: SERVICE_PRINCIPAL
 
       # Install fabric-cicd python package
       - name: Install fabric-cicd
@@ -31,7 +33,7 @@ jobs:
           FABRIC_TOKEN=$(az account get-access-token --resource "https://api.fabric.microsoft.com" --query accessToken -o tsv)
           echo "FABRIC_TOKEN=$FABRIC_TOKEN" >> $GITHUB_ENV
 
-      # Deploy all repo content to Test Workspace
+      # Deploy repo content to Test Workspace
       - name: Deploy to Fabric Test Workspace
         run: |
           python -m fabric_cicd.deployer \
