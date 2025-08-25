@@ -1,53 +1,41 @@
-name: Deploy Notebook to Fabric
+name: Deploy to Fabric Test Workspace
 
 on:
-  workflow_dispatch:   # manual trigger
-
-env:
-  resourceUrl: https://api.fabric.microsoft.com
+  workflow_dispatch:   # 👈 lets you run manually from GitHub Actions tab
 
 jobs:
-  Deploy_to_Test:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.11
-      - name: Install fabric-cicd
-        run: |
-          python -m pip install --upgrade pip
-          pip install fabric-cicd
-      - name: Authenticate to Azure
-        run: |
-          Install-Module -Name Az.Accounts -AllowClobber -Force
-          $SecureStringPwd = ConvertTo-SecureString ${{ secrets.AZURE_CLIENT_SECRET }} -AsPlainText -Force
-          $pscredential = New-Object System.Management.Automation.PSCredential(${{ secrets.AZURE_CLIENT_ID }}, $SecureStringPwd)
-          Connect-AzAccount -ServicePrincipal -Credential $pscredential -Tenant ${{ secrets.AZURE_TENANT_ID }}
-          $fabricToken = (Get-AzAccessToken -ResourceUrl ${{ env.resourceUrl }}).Token
-      - name: Deploy to Test
-        run: python auth_spn_secret_AzDo.py --WorkspaceId ${{ vars.TestWorkspace }} --Environment "Test" --RepositoryDirectory "." --ItemsInScope "Notebook"
+  deploy-to-fabric-test:
+    runs-on: ubuntu-latest
 
-  Deploy_to_Prod:
-    runs-on: windows-latest
-    needs: Deploy_to_Test
+    env:
+      resourceUrl: https://api.fabric.microsoft.com
+      FABRIC_WORKSPACE_ID: ${{ secrets.FABRIC_TEST_WORKSPACE_ID }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
-          python-version: 3.11
-      - name: Install fabric-cicd
-        run: |
-          python -m pip install --upgrade pip
-          pip install fabric-cicd
+          python-version: '3.11'
+
+      - name: Install fabric-cicd tool
+        run: pip install fabric-cicd
+
       - name: Authenticate to Azure
+        shell: pwsh
         run: |
           Install-Module -Name Az.Accounts -AllowClobber -Force
           $SecureStringPwd = ConvertTo-SecureString ${{ secrets.AZURE_CLIENT_SECRET }} -AsPlainText -Force
           $pscredential = New-Object System.Management.Automation.PSCredential(${{ secrets.AZURE_CLIENT_ID }}, $SecureStringPwd)
           Connect-AzAccount -ServicePrincipal -Credential $pscredential -Tenant ${{ secrets.AZURE_TENANT_ID }}
           $fabricToken = (Get-AzAccessToken -ResourceUrl ${{ env.resourceUrl }}).Token
-      - name: Deploy to Prod
-        run: python auth_spn_secret_AzDo.py --WorkspaceId ${{ vars.ProdWorkspace }} --Environment "Prod" --RepositoryDirectory "." --ItemsInScope "Notebook"
+          echo "FABRIC_TOKEN=$fabricToken" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Deploy repo contents to Fabric Test Workspace
+        run: |
+          fabric-cicd deploy_folder \
+            --workspace $FABRIC_WORKSPACE_ID \
+            --path "." \
+            --token $FABRIC_TOKEN
