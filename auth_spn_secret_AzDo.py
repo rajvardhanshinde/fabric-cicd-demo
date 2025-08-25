@@ -5,11 +5,13 @@ parser = argparse.ArgumentParser(description='Deploy items to Fabric')
 parser.add_argument('--WorkspaceId', type=str, required=True)
 parser.add_argument('--Environment', type=str, required=True)
 parser.add_argument('--RepositoryDirectory', type=str, required=True)
-parser.add_argument('--ItemsInScope', type=str, required=True)
+parser.add_argument('--ItemsInScope', type=str, default="all",
+                    help='Comma-separated list of items to deploy (default: all)')
+
 args = parser.parse_args()
 
-# Split ItemsInScope into list
-item_type_in_scope = args.ItemsInScope.split(",")
+# Split ItemsInScope into list; if "all", keep as ["all"]
+item_type_in_scope = args.ItemsInScope.split(",") if args.ItemsInScope.lower() != "all" else ["all"]
 
 # Define target workspace
 target_workspace = FabricWorkspace(
@@ -22,4 +24,3 @@ target_workspace = FabricWorkspace(
 # Publish and clean orphan items
 publish_all_items(target_workspace)
 unpublish_all_orphan_items(target_workspace)
-
