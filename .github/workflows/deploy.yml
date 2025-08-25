@@ -32,4 +32,4 @@ jobs:
             --WorkspaceId ${{ secrets.FABRIC_TEST_WORKSPACE_ID }} \
             --Environment "TEST" \
             --RepositoryDirectory . \
-            --ItemsInScope "notebooks,datasets,reports"
+            --ItemsInScope "Notebook,Report,SemanticModel"
