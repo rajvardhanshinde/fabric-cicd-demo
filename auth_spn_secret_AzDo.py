@@ -37,16 +37,15 @@ if args.ArtifactsYaml:
     if not workspace_entry:
         raise ValueError(f"No artifacts found for workspace {args.WorkspaceId} in YAML")
     
-    # Prepare items_in_scope as list of dictionaries
-    items_in_scope = workspace_entry.get("items", [])
-    print(f"[INFO] Deploying {len(items_in_scope)} items from artifacts YAML")
+    # Extract unique list of item types (Notebook, Report, SemanticModel)
+    item_types = list({item['type'] for item in workspace_entry.get("items", [])})
+    print(f"[INFO] Deploying {len(workspace_entry.get('items', []))} items of types: {item_types}")
     
-    # Initialize FabricWorkspace
     target_workspace = FabricWorkspace(
         workspace_id=args.WorkspaceId,
         environment=args.Environment,
         repository_directory=args.RepositoryDirectory,
-        item_type_in_scope=items_in_scope  # The FabricWorkspace class may need to accept list of dicts
+        item_type_in_scope=item_types
     )
 
 else:
