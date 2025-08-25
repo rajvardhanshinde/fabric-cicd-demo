@@ -33,7 +33,7 @@ jobs:
       # 5️⃣ Run Fabric Deployment
       - name: Run Fabric Deployment Script
         run: |
-          # Use Artifacts YAML if it exists, else default to CLI items
+          # Use Artifacts YAML if it exists, else default to CLI ItemsInScope
           if [ -f ./parameter.yml ]; then
             echo "[INFO] Using artifacts YAML for deployment"
             python auth_spn_secret_AzDo.py \
