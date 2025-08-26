@@ -1,80 +1,81 @@
 import os
+import sys
+import argparse
 import yaml
 import requests
-import argparse
-import sys
-import glob
 
-def load_parameters(path):
-    """Load YAML config for artifacts"""
-    with open(path, "r") as f:
-        return yaml.safe_load(f)
+FABRIC_API = "https://api.fabric.microsoft.com/v1/workspaces"
 
-def get_api_url(workspace_id, artifact_type):
-    """Return Fabric API endpoint for the artifact type"""
-    base = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}"
-    if artifact_type == "Notebook":
-        return f"{base}/notebooks/import"
-    elif artifact_type == "Report":
-        return f"{base}/reports/import"
-    elif artifact_type == "SemanticModel":
-        return f"{base}/semanticModels/import"
-    else:
-        raise ValueError(f"❌ Unsupported artifact type: {artifact_type}")
+def load_parameters(param_file):
+    if not os.path.exists(param_file):
+        print(f"❌ Parameter file not found: {param_file}")
+        sys.exit(1)
 
-def deploy_artifact(workspace_id, file_path, artifact_type, token):
-    """Deploy single artifact file to Fabric workspace"""
-    print(f"📤 Deploying {file_path} as {artifact_type} to workspace {workspace_id}")
+    with open(param_file, "r") as f:
+        try:
+            params = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            print(f"❌ Error parsing {param_file}: {e}")
+            sys.exit(1)
 
-    url = get_api_url(workspace_id, artifact_type)
+    artifacts = params.get("artifacts", [])
+    if not artifacts:
+        print("⚠️ No artifacts defined in parameter.yml")
+    return artifacts
+
+
+def deploy_artifact(workspace_id, artifact, repo_dir, token):
+    # Validate required fields
+    for field in ["name", "type", "path"]:
+        if field not in artifact:
+            print(f"❌ Missing '{field}' in artifact: {artifact}")
+            return
+
+    artifact_path = os.path.join(repo_dir, artifact["path"])
+    if not os.path.exists(artifact_path):
+        print(f"⚠️ Skipping {artifact['name']} — path not found: {artifact_path}")
+        return
+
+    print(f"🚀 Deploying {artifact['name']} ({artifact['type']}) from {artifact_path}")
+
+    url = f"{FABRIC_API}/{workspace_id}/items"
     headers = {
-        "Authorization": f"Bearer {token}"
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
     }
 
-    files = {
-        "file": (os.path.basename(file_path), open(file_path, "rb"))
+    payload = {
+        "displayName": artifact["name"],
+        "type": artifact["type"]
     }
 
-    response = requests.post(url, headers=headers, files=files)
+    response = requests.post(url, headers=headers, json=payload)
 
-    if response.status_code in [200, 201]:
-        print(f"✅ Successfully deployed {file_path}")
+    if response.status_code == 200 or response.status_code == 201:
+        print(f"✅ Deployed {artifact['name']} successfully")
     else:
-        print(f"❌ Failed to deploy {file_path}")
-        print(f"➡️ Status: {response.status_code}")
-        print(f"➡️ Response: {response.text}")
+        print(f"❌ Failed to deploy {artifact['name']}: {response.status_code} {response.text}")
+
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Deploy Fabric items from repo")
     parser.add_argument("--WorkspaceId", required=True)
     parser.add_argument("--Environment", required=True)
     parser.add_argument("--RepositoryDirectory", required=True)
     parser.add_argument("--ItemsInScope", default="all")
-    parser.add_argument("--parameters", default="parameter.yml")
+    parser.add_argument("--parameters", required=True)
     args = parser.parse_args()
 
-    workspace_id = args.WorkspaceId
-    repo_dir = args.RepositoryDirectory
-
-    # Token from Azure login
-    token = os.environ.get("AZURE_ACCESS_TOKEN")
+    token = os.getenv("AZURE_ACCESS_TOKEN")
     if not token:
-        print("❌ Missing AZURE_ACCESS_TOKEN in environment")
+        print("❌ Missing AZURE_ACCESS_TOKEN. Make sure it is exported in GitHub Actions.")
         sys.exit(1)
 
-    params = load_parameters(args.parameters)
-    artifacts = params.get("artifacts", [])
+    artifacts = load_parameters(args.parameters)
 
     for artifact in artifacts:
-        artifact_dir = os.path.join(repo_dir, artifact["path"])
-        if not os.path.exists(artifact_dir):
-            print(f"⚠️ Skipping {artifact_dir}, path not found")
-            continue
+        deploy_artifact(args.WorkspaceId, artifact, args.RepositoryDirectory, token)
 
-        # Deploy all files under this artifact folder
-        for file_path in glob.glob(os.path.join(artifact_dir, "**"), recursive=True):
-            if os.path.isfile(file_path):
-                deploy_artifact(workspace_id, file_path, artifact["type"], token)
 
 if __name__ == "__main__":
     main()
