@@ -1,70 +1,60 @@
-name: Deploy to Fabric
+name: Deploy to Fabric (DEV / PROD)
 
 on:
   push:
-    branches:
-      - dev
-      - main
+    branches: [ dev, main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # -------------------------
-      # Checkout Repo
-      # -------------------------
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # -------------------------
-      # Azure Login
-      # -------------------------
-      - name: Azure Login
+      - name: Debug context
+        run: |
+          echo "Branch: ${GITHUB_REF_NAME}"
+          echo "Repo: ${GITHUB_REPOSITORY}"
+          echo "Repo dir: ${GITHUB_WORKSPACE}"
+          ls -R
+
+      - name: Azure Login (Service Principal)
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # -------------------------
-      # Setup Python
-      # -------------------------
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
-      # -------------------------
-      # Install dependencies
-      # -------------------------
       - name: Install dependencies
-        run: pip install -r scripts/requirements.txt
-
-      # -------------------------
-      # Get Fabric Token
-      # -------------------------
-      - name: Acquire Fabric Token
         run: |
-          echo "AZURE_ACCESS_TOKEN=$(az account get-access-token --resource https://api.fabric.microsoft.com --query accessToken -o tsv)" >> $GITHUB_ENV
+          pip install --upgrade pip
+          pip install -r scripts/requirements.txt
 
-      # -------------------------
-      # Deploy Artifacts
-      # -------------------------
-      - name: Deploy Fabric Artifacts
+      # --- Branch → Workspace mapping (only this logic decides where to deploy) ---
+      - name: Deploy to Fabric
         run: |
+          set -euo pipefail
           if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
-            echo "Deploying to DEV workspace..."
+            echo "🚀 Deploying *DEV branch* → DEV workspace: ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}"
             python scripts/deploy_fabric_items.py \
               --WorkspaceId "${{ secrets.FABRIC_DEV_WORKSPACE_ID }}" \
-              --Environment "DEV" \
+              --Environment DEV \
               --RepositoryDirectory "${GITHUB_WORKSPACE}" \
               --ItemsInScope all \
-              --parameters parameter.yml
+              --Debug
           elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-            echo "Deploying to PROD workspace..."
+            echo "🚀 Deploying *MAIN branch* → PROD workspace: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}"
             python scripts/deploy_fabric_items.py \
               --WorkspaceId "${{ secrets.FABRIC_PROD_WORKSPACE_ID }}" \
-              --Environment "PROD" \
+              --Environment PROD \
               --RepositoryDirectory "${GITHUB_WORKSPACE}" \
               --ItemsInScope all \
-              --parameters parameter.yml
+              --Debug
+          else
+            echo "⚠️ Branch ${GITHUB_REF_NAME} is not mapped. Skipping."
           fi
