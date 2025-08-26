@@ -1,12 +1,9 @@
-schemaVersion: 1
-
 environments:
   DEV:
     variables: {}
   PROD:
     variables: {}
 
-# Declare the items you want Fabric CICD to track
 items:
   Notebook:
     - name: Sales Notebook
@@ -18,5 +15,4 @@ items:
     - name: Sales Semantic Model
       path: semantic_models
 
-# No replacements for now
 find_replace: []
