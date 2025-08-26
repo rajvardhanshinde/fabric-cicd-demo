@@ -11,26 +11,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # -------------------------
+      # Checkout Repo
+      # -------------------------
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # -------------------------
+      # Azure Login
+      # -------------------------
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # -------------------------
+      # Setup Python
+      # -------------------------
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
+      # -------------------------
+      # Install dependencies
+      # -------------------------
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
+      # -------------------------
+      # Get Fabric Token
+      # -------------------------
       - name: Acquire Fabric Token
         run: |
-          echo "AZURE_ACCESS_TOKEN=$(az account get-access-token --resource https://api.fabric.microsoft.com/ --query accessToken -o tsv)" >> $GITHUB_ENV
+          echo "AZURE_ACCESS_TOKEN=$(az account get-access-token --resource https://api.fabric.microsoft.com --query accessToken -o tsv)" >> $GITHUB_ENV
 
+      # -------------------------
+      # Deploy Artifacts
+      # -------------------------
       - name: Deploy Fabric Artifacts
         run: |
           if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
