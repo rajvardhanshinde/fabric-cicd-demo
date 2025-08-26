@@ -8,19 +8,15 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debug context
+      - name: Validate SP JSON secret
         run: |
-          echo "Branch: ${GITHUB_REF_NAME}"
-          echo "Repo:   ${GITHUB_REPOSITORY}"
-          echo "Dir:    ${GITHUB_WORKSPACE}"
-          ls -R
+          echo '${{ secrets.AZURE_SP_NOSUB_JSON }}' | jq -e '.clientId and .clientSecret and .tenantId' >/dev/null \
+            || { echo "❌ Secret AZURE_SP_NOSUB_JSON must contain clientId, clientSecret, tenantId."; exit 1; }
 
-      # Login with Service Principal (NO subscription id)
       - name: Azure Login (SP, no subscription)
         uses: azure/login@v1
         with:
@@ -38,7 +34,7 @@ jobs:
           pip install --upgrade pip
           pip install -r scripts/requirements.txt
 
-      # Optional: Show which workspaces this identity can see (good for auth debugging)
+      # Optional: list visible workspaces (auth sanity check)
       - name: Preflight Fabric visibility
         run: |
           pip install --quiet azure-cli jq
@@ -47,7 +43,13 @@ jobs:
           curl -s -H "Authorization: Bearer $TOKEN" https://api.powerbi.com/v1.0/myorg/groups \
             | jq -r '.value[] | "\(.name) (\(.id))"'
 
-      # Branch → Workspace mapping (dev→DEV, main→PROD)
+      - name: Debug context
+        run: |
+          echo "Branch: ${GITHUB_REF_NAME}"
+          echo "Repo:   ${GITHUB_REPOSITORY}"
+          echo "Dir:    ${GITHUB_WORKSPACE}"
+          ls -R
+
       - name: Deploy to Fabric
         run: |
           set -euo pipefail
