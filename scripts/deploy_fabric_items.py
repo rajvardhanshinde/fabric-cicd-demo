@@ -3,39 +3,46 @@ import yaml
 import requests
 import argparse
 import sys
+import glob
 
 def load_parameters(path):
     """Load YAML config for artifacts"""
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
-def deploy_artifact(workspace_id, artifact_path, artifact_type, token):
-    """Deploy artifact to Fabric workspace"""
-    if not os.path.exists(artifact_path):
-        print(f"⚠️ Skipping {artifact_path}, path not found")
-        return
+def get_api_url(workspace_id, artifact_type):
+    """Return Fabric API endpoint for the artifact type"""
+    base = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}"
+    if artifact_type == "Notebook":
+        return f"{base}/notebooks/import"
+    elif artifact_type == "Report":
+        return f"{base}/reports/import"
+    elif artifact_type == "SemanticModel":
+        return f"{base}/semanticModels/import"
+    else:
+        raise ValueError(f"❌ Unsupported artifact type: {artifact_type}")
 
-    print(f"📤 Deploying {artifact_path} as {artifact_type} to workspace {workspace_id}")
+def deploy_artifact(workspace_id, file_path, artifact_type, token):
+    """Deploy single artifact file to Fabric workspace"""
+    print(f"📤 Deploying {file_path} as {artifact_type} to workspace {workspace_id}")
 
-    # NOTE: Adjust endpoint for Fabric API
-    url = f"https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/artifacts"
+    url = get_api_url(workspace_id, artifact_type)
     headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {token}"
     }
 
-    payload = {
-        "name": os.path.basename(artifact_path),
-        "type": artifact_type,
-        "path": artifact_path
+    files = {
+        "file": (os.path.basename(file_path), open(file_path, "rb"))
     }
 
-    response = requests.post(url, headers=headers, json=payload)
+    response = requests.post(url, headers=headers, files=files)
 
     if response.status_code in [200, 201]:
-        print(f"✅ Successfully deployed {artifact_path}")
+        print(f"✅ Successfully deployed {file_path}")
     else:
-        print(f"❌ Failed to deploy {artifact_path}: {response.status_code} {response.text}")
+        print(f"❌ Failed to deploy {file_path}")
+        print(f"➡️ Status: {response.status_code}")
+        print(f"➡️ Response: {response.text}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -59,8 +66,15 @@ def main():
     artifacts = params.get("artifacts", [])
 
     for artifact in artifacts:
-        artifact_path = os.path.join(repo_dir, artifact["path"])
-        deploy_artifact(workspace_id, artifact_path, artifact["type"], token)
+        artifact_dir = os.path.join(repo_dir, artifact["path"])
+        if not os.path.exists(artifact_dir):
+            print(f"⚠️ Skipping {artifact_dir}, path not found")
+            continue
+
+        # Deploy all files under this artifact folder
+        for file_path in glob.glob(os.path.join(artifact_dir, "**"), recursive=True):
+            if os.path.isfile(file_path):
+                deploy_artifact(workspace_id, file_path, artifact["type"], token)
 
 if __name__ == "__main__":
     main()
