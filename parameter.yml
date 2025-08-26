@@ -1,10 +1,22 @@
-# Fabric Deployment Parameters
-artifacts:
-  - path: notebooks
-    type: Notebook
+schemaVersion: 1
 
-  - path: reports
-    type: Report
+environments:
+  DEV:
+    variables: {}
+  PROD:
+    variables: {}
 
-  - path: semantic_models
-    type: SemanticModel
+# Declare the items you want Fabric CICD to track
+items:
+  Notebook:
+    - name: Sales Notebook
+      path: notebooks
+  Report:
+    - name: Sales Report
+      path: reports
+  SemanticModel:
+    - name: Sales Semantic Model
+      path: semantic_models
+
+# No replacements for now
+find_replace: []
