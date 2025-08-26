@@ -11,23 +11,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # --------------------------
-      # Checkout repo
-      # --------------------------
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # --------------------------
-      # Login to Azure
-      # --------------------------
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # --------------------------
-      # Setup Python
-      # --------------------------
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -36,9 +27,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
-      # --------------------------
-      # Deploy to Fabric
-      # --------------------------
+      - name: Acquire Fabric Token
+        run: |
+          echo "AZURE_ACCESS_TOKEN=$(az account get-access-token --resource https://api.fabric.microsoft.com/ --query accessToken -o tsv)" >> $GITHUB_ENV
+
       - name: Deploy Fabric Artifacts
         run: |
           if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
@@ -47,12 +39,14 @@ jobs:
               --WorkspaceId "${{ secrets.FABRIC_DEV_WORKSPACE_ID }}" \
               --Environment "DEV" \
               --RepositoryDirectory "${GITHUB_WORKSPACE}" \
-              --ItemsInScope all
+              --ItemsInScope all \
+              --parameters parameter.yml
           elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
             echo "Deploying to PROD workspace..."
             python scripts/deploy_fabric_items.py \
               --WorkspaceId "${{ secrets.FABRIC_PROD_WORKSPACE_ID }}" \
               --Environment "PROD" \
               --RepositoryDirectory "${GITHUB_WORKSPACE}" \
-              --ItemsInScope all
+              --ItemsInScope all \
+              --parameters parameter.yml
           fi
