@@ -23,10 +23,11 @@ jobs:
       # --------------------------
       - name: Print debug info
         run: |
-          echo "🔎 GITHUB_REF_NAME=${GITHUB_REF_NAME}"
-          echo "🔎 GITHUB_REPOSITORY=${GITHUB_REPOSITORY}"
-          echo "🔎 Current working directory: $(pwd)"
-          echo "🔎 Repository contents:"
+          echo "🔎 Branch: ${GITHUB_REF_NAME}"
+          echo "🔎 Repo: ${GITHUB_REPOSITORY}"
+          echo "🔎 Workspace DEV: ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}"
+          echo "🔎 Workspace PROD: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}"
+          echo "🔎 Listing repo contents..."
           ls -R
 
       # --------------------------
