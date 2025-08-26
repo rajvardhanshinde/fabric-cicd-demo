@@ -2,15 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-Simplified deploy script for Microsoft Fabric:
-- Works with only DEV and PROD environments
-- Does not require --parameters on the CLI
-- Automatically looks for parameter.yml at repo root
+Deploy Microsoft Fabric items from a Git repo to a specified Fabric workspace.
+- No parameter.yml is required
+- Supports only DEV and PROD environments
 """
 
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 from fabric_cicd import (
@@ -46,22 +44,6 @@ def compute_items(scope: str):
         return DEFAULT_ITEMS
     return [t.strip() for t in scope.split(",") if t.strip()]
 
-def stage_parameter_file(repo_dir: Path):
-    """
-    Make sure parameter.yml is placed at <RepositoryDirectory>/parameter.yml.
-    """
-    src = Path.cwd() / "parameter.yml"
-    dst = repo_dir / "parameter.yml"
-    if dst.exists():
-        return dst
-    if src.exists():
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_bytes(src.read_bytes())
-        logging.info("Staged parameter.yml into %s", dst)
-    else:
-        logging.warning("No parameter.yml found at repo root.")
-    return dst
-
 def main():
     args = parse_args()
     log_level = logging.DEBUG if args.Debug else logging.INFO
@@ -74,7 +56,6 @@ def main():
     unpublish = normalize_bool(args.UnpublishOrphans)
 
     logging.info("Deploying to %s workspace %s", args.Environment, args.WorkspaceId)
-    stage_parameter_file(repo_dir)
 
     try:
         ws = FabricWorkspace(
