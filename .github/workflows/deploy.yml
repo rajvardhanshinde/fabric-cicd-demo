@@ -8,12 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      AZURE_CLIENT_ID:     ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-      AZURE_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
 
-  # ---- Steps ----
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,13 +20,13 @@ jobs:
           echo "Dir:    ${GITHUB_WORKSPACE}"
           ls -R
 
-      # Login with SP (no subscription id)
-      - name: Azure Login (Service Principal)
+      # Login with Service Principal (NO subscription id)
+      - name: Azure Login (SP, no subscription)
         uses: azure/login@v1
         with:
-          client-id:     ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id:     ${{ secrets.AZURE_TENANT_ID }}
-          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          creds: ${{ secrets.AZURE_SP_NOSUB_JSON }}
+          allow-no-subscriptions: true
+          environment: azurecloud
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -43,7 +38,7 @@ jobs:
           pip install --upgrade pip
           pip install -r scripts/requirements.txt
 
-      # (Optional but helpful) List workspaces visible to this SP
+      # Optional: Show which workspaces this identity can see (good for auth debugging)
       - name: Preflight Fabric visibility
         run: |
           pip install --quiet azure-cli jq
@@ -52,7 +47,7 @@ jobs:
           curl -s -H "Authorization: Bearer $TOKEN" https://api.powerbi.com/v1.0/myorg/groups \
             | jq -r '.value[] | "\(.name) (\(.id))"'
 
-      # Branch → Workspace mapping
+      # Branch → Workspace mapping (dev→DEV, main→PROD)
       - name: Deploy to Fabric
         run: |
           set -euo pipefail
