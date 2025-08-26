@@ -1,10 +1,12 @@
-# Fabric Deployment Parameters
 artifacts:
-  - path: notebooks
+  - name: Sales Notebook
     type: Notebook
+    path: notebooks
 
-  - path: reports
+  - name: Sales Report
     type: Report
+    path: reports
 
-  - path: semantic_models
+  - name: Sales Semantic Model
     type: SemanticModel
+    path: semantic_models
