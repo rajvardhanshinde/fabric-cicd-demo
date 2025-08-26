@@ -1,10 +1,11 @@
-name: Deploy to Fabric
+name: Deploy to Fabric (DEV / PROD)
 
 on:
   push:
     branches:
       - dev
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -15,7 +16,18 @@ jobs:
       # Checkout repo
       # --------------------------
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      # --------------------------
+      # Debug info
+      # --------------------------
+      - name: Print debug info
+        run: |
+          echo "🔎 GITHUB_REF_NAME=${GITHUB_REF_NAME}"
+          echo "🔎 GITHUB_REPOSITORY=${GITHUB_REPOSITORY}"
+          echo "🔎 Current working directory: $(pwd)"
+          echo "🔎 Repository contents:"
+          ls -R
 
       # --------------------------
       # Login to Azure
@@ -29,9 +41,9 @@ jobs:
       # Setup Python
       # --------------------------
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
@@ -42,17 +54,21 @@ jobs:
       - name: Deploy Fabric Artifacts
         run: |
           if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
-            echo "Deploying to DEV workspace..."
+            echo "🚀 Deploying to DEV workspace..."
             python scripts/deploy_fabric_items.py \
               --WorkspaceId "${{ secrets.FABRIC_DEV_WORKSPACE_ID }}" \
-              --Environment "DEV" \
+              --Environment DEV \
               --RepositoryDirectory "${GITHUB_WORKSPACE}" \
-              --ItemsInScope all
+              --ItemsInScope all \
+              --Debug
           elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-            echo "Deploying to PROD workspace..."
+            echo "🚀 Deploying to PROD workspace..."
             python scripts/deploy_fabric_items.py \
               --WorkspaceId "${{ secrets.FABRIC_PROD_WORKSPACE_ID }}" \
-              --Environment "PROD" \
+              --Environment PROD \
               --RepositoryDirectory "${GITHUB_WORKSPACE}" \
-              --ItemsInScope all
+              --ItemsInScope all \
+              --Debug
+          else
+            echo "⚠️ Skipping deployment — branch ${GITHUB_REF_NAME} not mapped."
           fi
