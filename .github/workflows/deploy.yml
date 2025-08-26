@@ -8,7 +8,12 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      AZURE_CLIENT_ID:     ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID:     ${{ secrets.AZURE_TENANT_ID }}
 
+  # ---- Steps ----
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,14 +21,17 @@ jobs:
       - name: Debug context
         run: |
           echo "Branch: ${GITHUB_REF_NAME}"
-          echo "Repo: ${GITHUB_REPOSITORY}"
-          echo "Repo dir: ${GITHUB_WORKSPACE}"
+          echo "Repo:   ${GITHUB_REPOSITORY}"
+          echo "Dir:    ${GITHUB_WORKSPACE}"
           ls -R
 
+      # Login with SP (no subscription id)
       - name: Azure Login (Service Principal)
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id:     ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:     ${{ secrets.AZURE_TENANT_ID }}
+          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,12 +43,21 @@ jobs:
           pip install --upgrade pip
           pip install -r scripts/requirements.txt
 
-      # --- Branch → Workspace mapping (only this logic decides where to deploy) ---
+      # (Optional but helpful) List workspaces visible to this SP
+      - name: Preflight Fabric visibility
+        run: |
+          pip install --quiet azure-cli jq
+          TOKEN=$(az account get-access-token --resource=https://analysis.windows.net/powerbi/api --query accessToken -o tsv)
+          echo "Workspaces visible to SP:"
+          curl -s -H "Authorization: Bearer $TOKEN" https://api.powerbi.com/v1.0/myorg/groups \
+            | jq -r '.value[] | "\(.name) (\(.id))"'
+
+      # Branch → Workspace mapping
       - name: Deploy to Fabric
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
-            echo "🚀 Deploying *DEV branch* → DEV workspace: ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}"
+            echo "🚀 DEV branch → DEV workspace: ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}"
             python scripts/deploy_fabric_items.py \
               --WorkspaceId "${{ secrets.FABRIC_DEV_WORKSPACE_ID }}" \
               --Environment DEV \
@@ -48,7 +65,7 @@ jobs:
               --ItemsInScope all \
               --Debug
           elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-            echo "🚀 Deploying *MAIN branch* → PROD workspace: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}"
+            echo "🚀 MAIN branch → PROD workspace: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}"
             python scripts/deploy_fabric_items.py \
               --WorkspaceId "${{ secrets.FABRIC_PROD_WORKSPACE_ID }}" \
               --Environment PROD \
@@ -56,5 +73,5 @@ jobs:
               --ItemsInScope all \
               --Debug
           else
-            echo "⚠️ Branch ${GITHUB_REF_NAME} is not mapped. Skipping."
+            echo "⚠️ Branch ${GITHUB_REF_NAME} not mapped. Skipping."
           fi
