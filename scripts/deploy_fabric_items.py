@@ -1,83 +1,96 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+"""
+Simplified deploy script for Microsoft Fabric:
+- Works with only DEV and PROD environments
+- Does not require --parameters on the CLI
+- Automatically looks for parameter.yml at repo root
+"""
+
+import argparse
+import logging
 import os
 import sys
-import argparse
-import yaml
-import requests
+from pathlib import Path
+from fabric_cicd import (
+    FabricWorkspace,
+    publish_all_items,
+    unpublish_all_orphan_items,
+    change_log_level,
+)
 
-FABRIC_API = "https://api.fabric.microsoft.com/v1/workspaces"
+DEFAULT_ITEMS = [
+    "Notebook",
+    "DataPipeline",
+    "Lakehouse",
+    "SemanticModel",
+    "Report",
+]
 
-def load_parameters(param_file):
-    if not os.path.exists(param_file):
-        print(f"❌ Parameter file not found: {param_file}")
-        sys.exit(1)
+def parse_args():
+    p = argparse.ArgumentParser(description="Deploy Microsoft Fabric artifacts")
+    p.add_argument("--WorkspaceId", required=True, help="Target Fabric Workspace ID")
+    p.add_argument("--Environment", required=True, choices=["DEV", "PROD"])
+    p.add_argument("--RepositoryDirectory", required=True)
+    p.add_argument("--ItemsInScope", default="all", help="Comma-list of items or 'all'")
+    p.add_argument("--UnpublishOrphans", default="false")
+    p.add_argument("--Debug", action="store_true")
+    return p.parse_args()
 
-    with open(param_file, "r") as f:
-        try:
-            params = yaml.safe_load(f)
-        except yaml.YAMLError as e:
-            print(f"❌ Error parsing {param_file}: {e}")
-            sys.exit(1)
+def normalize_bool(val: str) -> bool:
+    return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
 
-    artifacts = params.get("artifacts", [])
-    if not artifacts:
-        print("⚠️ No artifacts defined in parameter.yml")
-    return artifacts
+def compute_items(scope: str):
+    if scope.strip().lower() == "all":
+        return DEFAULT_ITEMS
+    return [t.strip() for t in scope.split(",") if t.strip()]
 
-
-def deploy_artifact(workspace_id, artifact, repo_dir, token):
-    # Validate required fields
-    for field in ["name", "type", "path"]:
-        if field not in artifact:
-            print(f"❌ Missing '{field}' in artifact: {artifact}")
-            return
-
-    artifact_path = os.path.join(repo_dir, artifact["path"])
-    if not os.path.exists(artifact_path):
-        print(f"⚠️ Skipping {artifact['name']} — path not found: {artifact_path}")
-        return
-
-    print(f"🚀 Deploying {artifact['name']} ({artifact['type']}) from {artifact_path}")
-
-    url = f"{FABRIC_API}/{workspace_id}/items"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "displayName": artifact["name"],
-        "type": artifact["type"]
-    }
-
-    response = requests.post(url, headers=headers, json=payload)
-
-    if response.status_code == 200 or response.status_code == 201:
-        print(f"✅ Deployed {artifact['name']} successfully")
+def stage_parameter_file(repo_dir: Path):
+    """
+    Make sure parameter.yml is placed at <RepositoryDirectory>/parameter.yml.
+    """
+    src = Path.cwd() / "parameter.yml"
+    dst = repo_dir / "parameter.yml"
+    if dst.exists():
+        return dst
+    if src.exists():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(src.read_bytes())
+        logging.info("Staged parameter.yml into %s", dst)
     else:
-        print(f"❌ Failed to deploy {artifact['name']}: {response.status_code} {response.text}")
-
+        logging.warning("No parameter.yml found at repo root.")
+    return dst
 
 def main():
-    parser = argparse.ArgumentParser(description="Deploy Fabric items from repo")
-    parser.add_argument("--WorkspaceId", required=True)
-    parser.add_argument("--Environment", required=True)
-    parser.add_argument("--RepositoryDirectory", required=True)
-    parser.add_argument("--ItemsInScope", default="all")
-    parser.add_argument("--parameters", required=True)
-    args = parser.parse_args()
+    args = parse_args()
+    log_level = logging.DEBUG if args.Debug else logging.INFO
+    logging.basicConfig(level=log_level, format="%(asctime)s %(levelname)s %(message)s")
+    if args.Debug:
+        change_log_level("DEBUG")
 
-    token = os.getenv("AZURE_ACCESS_TOKEN")
-    if not token:
-        print("❌ Missing AZURE_ACCESS_TOKEN. Make sure it is exported in GitHub Actions.")
-        sys.exit(1)
+    repo_dir = Path(args.RepositoryDirectory).resolve()
+    items = compute_items(args.ItemsInScope)
+    unpublish = normalize_bool(args.UnpublishOrphans)
 
-    artifacts = load_parameters(args.parameters)
+    logging.info("Deploying to %s workspace %s", args.Environment, args.WorkspaceId)
+    stage_parameter_file(repo_dir)
 
-    for artifact in artifacts:
-        deploy_artifact(args.WorkspaceId, artifact, args.RepositoryDirectory, token)
-
+    try:
+        ws = FabricWorkspace(
+            workspace_id=args.WorkspaceId,
+            environment=args.Environment,
+            repository_directory=str(repo_dir),
+            item_type_in_scope=items,
+        )
+        publish_all_items(ws)
+        if unpublish:
+            unpublish_all_orphan_items(ws)
+        logging.info("Deployment successful ✅")
+        return 0
+    except Exception as e:
+        logging.exception("Deployment failed ❌: %s", e)
+        return 1
 
 if __name__ == "__main__":
-    main()
-
+    sys.exit(main())
