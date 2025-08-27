@@ -1,0 +1,57 @@
+table orders
+	lineageTag: 39b0704b-4ec5-4ea7-96b8-64735f4a983b
+	sourceLineageTag: [dbo].[orders]
+
+	column id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 95069ca7-67d3-463e-9a81-285e06f3ccbf
+		sourceLineageTag: id
+		summarizeBy: sum
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column customer
+		dataType: string
+		sourceProviderType: varchar(8000)
+		lineageTag: a549b816-0e04-4da5-be95-375434f34b31
+		sourceLineageTag: customer
+		summarizeBy: none
+		sourceColumn: customer
+
+		annotation SummarizationSetBy = Automatic
+
+	column amount
+		dataType: double
+		sourceProviderType: float
+		lineageTag: eb1cd235-8794-4635-ad70-e9c139fb1fe2
+		sourceLineageTag: amount
+		summarizeBy: sum
+		sourceColumn: amount
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column txn_date
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: date
+		lineageTag: 9ec3d184-65c8-4545-af12-8be2ce4d3bcc
+		sourceLineageTag: txn_date
+		summarizeBy: none
+		sourceColumn: txn_date
+
+		annotation SummarizationSetBy = Automatic
+
+	partition orders = entity
+		mode: directLake
+		source
+			entityName: orders
+			schemaName: dbo
+			expressionSource: DatabaseQuery
+
+	annotation PBI_ResultType = Table
+
