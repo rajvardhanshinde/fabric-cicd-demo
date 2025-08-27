@@ -1,10 +1,1 @@
-find_replace:
-  - environments: ["PROD"]
-    file_glob: "reports/**/semanticModel/*.json"
-    replacements:
-      - find: '"workspaceId":"${FABRIC_DEV_WORKSPACE_ID}"'
-        replace: '"workspaceId":"${FABRIC_PROD_WORKSPACE_ID}"'
-      - find: '"artifactId":"${FABRIC_DEV_LAKEHOUSE_ID}"'
-        replace: '"artifactId":"${FABRIC_PROD_LAKEHOUSE_ID}"'
-      - find: '"sqlEndpointId":"${FABRIC_DEV_SQL_ID}"'
-        replace: '"sqlEndpointId":"${FABRIC_PROD_SQL_ID}"'
+find_replace: []
