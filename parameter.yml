@@ -1,12 +1,1 @@
-artifacts:
-  - name: Sales Notebook
-    type: Notebook
-    path: notebooks
-
-  - name: Sales Report
-    type: Report
-    path: reports
-
-  - name: Sales Semantic Model
-    type: SemanticModel
-    path: semantic_models
+find_replace: []
