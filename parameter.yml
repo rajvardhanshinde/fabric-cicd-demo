@@ -1,11 +1,11 @@
 find_replace:
   - environments: ["PROD"]
-    file_glob: "order-SM.SemanticModel/**/*.json"
+    file_glob: "order-SM.SemanticModel/**/*.tmdl"
     replacements:
-      - find: '"workspaceId":"${FABRIC_DEV_WORKSPACE_ID}"'
-        replace: '"workspaceId":"${FABRIC_PROD_WORKSPACE_ID}"'
-      - find: '"artifactId":"${FABRIC_DEV_LAKEHOUSE_ID}"'
-        replace: '"artifactId":"${FABRIC_PROD_LAKEHOUSE_ID}"'
-      # uncomment when you have SQL endpoint IDs set
-      # - find: '"sqlEndpointId":"${FABRIC_DEV_SQL_ID}"'
-      #   replace: '"sqlEndpointId":"${FABRIC_PROD_SQL_ID}"'
+      # Swap SQL endpoint hostname
+      - find: 'Sql.Database("U45POLRYDNZUHDEJWN5HOPHDVM-7MW5T5CP7ODEXHL77HJS7H32FI.datawarehouse.fabric.microsoft.com"'
+        replace: 'Sql.Database("${FABRIC_PROD_SQL_HOST}"'
+
+      # Swap Lakehouse ID (second parameter)
+      - find: '"4fbf51c3-a772-4caa-9fd6-782eef0f23b1")'
+        replace: '"${FABRIC_PROD_LAKEHOUSE_ID}")'
