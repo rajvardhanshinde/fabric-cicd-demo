@@ -1,55 +1,174 @@
-name: Deploy to Fabric (double-tap Direct Lake)
+name: Deploy to Fabric (with deep debug)
 
 on:
   push:
     branches: [ dev, main ]
   workflow_dispatch:
 
+# Set this to your Lakehouse display name ONLY IF you're using the double-pass model binding later.
 env:
-  # Change this to your Lakehouse display name as it appears in the workspace
-  LAKEHOUSE_DISPLAY_NAME: "sample_LH"
+    LAKEHOUSE_DISPLAY_NAME: "sample_LH"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      # --------------------------
+      # Checkout
+      # --------------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Azure auth for fabric-cicd (your existing SP JSON)
+      # --------------------------
+      # Azure login
+      # --------------------------
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           allow-no-subscriptions: true
 
-      # Python toolchain (fabric-cicd + Fabric CLI)
+      # --------------------------
+      # Python toolchain
+      # --------------------------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install libs (fabric-cicd + Fabric CLI)
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install fabric-cicd ms-fabric-cli
+          pip install -r scripts/requirements.txt
 
-      # ---------- PASS 1: deploy everything EXCEPT Semantic Models & Reports ----------
+      # --------------------------
+      # DEBUG 1: Show which branch → which workspace
+      # --------------------------
+      - name: Debug · branch → workspace mapping
+        run: |
+          echo "Branch: ${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
+            echo "→ Will target DEV workspace"
+          elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            echo "→ Will target PROD workspace"
+          else
+            echo "→ Not mapped; job will skip deploy"
+          fi
+
+      # --------------------------
+      # DEBUG 2: Check secrets exist (masked), validate GUID shape
+      # --------------------------
+      - name: Debug · secrets presence & GUID shape
+        env:
+          FABRIC_DEV_WORKSPACE_ID:  ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}
+          FABRIC_PROD_WORKSPACE_ID: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}
+          AZURE_CREDENTIALS:        ${{ secrets.AZURE_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+
+          jq -e . >/dev/null <<< "${AZURE_CREDENTIALS}" || { echo "❌ AZURE_CREDENTIALS is not valid JSON"; exit 1; }
+
+          # Extract SP details for display (masked)
+          CID=$(jq -r '.clientId'     <<< "${AZURE_CREDENTIALS}")
+          TID=$(jq -r '.tenantId'     <<< "${AZURE_CREDENTIALS}")
+          echo "✅ Found SP clientId len=${#CID} last4=${CID: -4}"
+          echo "✅ Found tenantId   len=${#TID} last4=${TID: -4}"
+
+          # Helper: check non-empty
+          must() { local n="$1"; local v="${!n:-}"; [ -n "$v" ] || { echo "❌ Missing $n"; exit 1; }; echo "✅ $n present · len=${#v} · last4=${v: -4}"; }
+          must FABRIC_DEV_WORKSPACE_ID
+          must FABRIC_PROD_WORKSPACE_ID
+
+          # GUID shape check (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+          guidre='^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+          for n in FABRIC_DEV_WORKSPACE_ID FABRIC_PROD_WORKSPACE_ID; do
+            v="${!n}"
+            if [[ "$v" =~ $guidre ]]; then
+              echo "✅ $n looks like a GUID"
+            else
+              echo "❌ $n does NOT look like a GUID: $v"
+              exit 1
+            fi
+          done
+
+      # --------------------------
+      # DEBUG 3: Who am I? (Azure context)
+      # --------------------------
+      - name: Debug · Azure context
+        run: |
+          echo "=== az account show ==="
+          az account show --output jsonc || true
+          echo "=== list tenants (short) ==="
+          az account tenant list --output table || true
+
+      # --------------------------
+      # DEBUG 4: Probe Fabric API → GET workspace (real cause for exit 1)
+      # --------------------------
+      - name: Debug · Probe Fabric API (GET /v1/workspaces/{id})
+        env:
+          FABRIC_DEV_WORKSPACE_ID:  ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}
+          FABRIC_PROD_WORKSPACE_ID: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
+            WS="${FABRIC_DEV_WORKSPACE_ID}"
+            ENVN="DEV"
+          else
+            WS="${FABRIC_PROD_WORKSPACE_ID}"
+            ENVN="PROD"
+          fi
+
+          echo "Probing ${ENVN} workspace: ${WS}"
+          TOKEN=$(az account get-access-token --resource=https://analysis.windows.net/powerbi/api --query accessToken -o tsv)
+
+          echo "curl GET https://api.powerbi.com/v1/workspaces/${WS}"
+          # Note: do NOT echo the token
+          set +e
+          HTTP=$(curl -sS -w "%{http_code}" -o /tmp/ws.json \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "https://api.powerbi.com/v1/workspaces/${WS}")
+          set -e
+
+          echo "HTTP: ${HTTP}"
+          echo "Body:"
+          head -c 1000 /tmp/ws.json; echo
+
+          if [[ "${HTTP}" != "200" ]]; then
+            echo "❌ Cannot access workspace ${WS}. Make sure the Service Principal is an Admin of this workspace and the ID is correct."
+            exit 1
+          fi
+          echo "✅ Workspace GET succeeded."
+
+      # --------------------------
+      # (Optional) list artifacts in repo
+      # --------------------------
+      - name: Discover artifacts
+        run: |
+          echo "🔎 Notebooks (*.ipynb):"
+          find "${GITHUB_WORKSPACE}" -type f -iname "*.ipynb" | sed 's/^/ - /' || true
+          echo ""
+          echo "🔎 Semantic Model files:"
+          find "${GITHUB_WORKSPACE}" -type f \( -iname "*.tmdl" -o -iname "*.pbism" -o -iname "*.json" \) \
+            | sed 's/^/ - /' || true
+
+      # --------------------------
+      # PASS 1: Deploy infra (no SM/Reports) — this is where it failed earlier
+      # --------------------------
       - name: Pass 1 · Deploy infra (no SM/Reports)
-        if: github.ref_name == 'dev' || github.ref_name == 'main'
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
             TARGET_WS="${{ secrets.FABRIC_DEV_WORKSPACE_ID }}"
             TARGET_ENV="DEV"
-          else
+          elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
             TARGET_WS="${{ secrets.FABRIC_PROD_WORKSPACE_ID }}"
             TARGET_ENV="PROD"
+          else
+            echo "Branch ${GITHUB_REF_NAME} not mapped. Skipping."
+            exit 0
           fi
-
           echo "🚀 PASS 1 → ${TARGET_ENV} workspace: ${TARGET_WS}"
-          # Limit item types so Lakehouse & dependencies go first; SM/Reports later
           python scripts/deploy_fabric_items.py \
             --WorkspaceId "${TARGET_WS}" \
             --Environment "${TARGET_ENV}" \
@@ -57,61 +176,26 @@ jobs:
             --ItemsInScope "Notebook,DataPipeline,Lakehouse,DataWarehouse,SQLScript" \
             --Debug
 
-      # ---------- Only on PROD promotion (main): discover PROD SQL endpoint id ----------
-      - name: FAB login for Fabric CLI (SP)
-        if: github.ref_name == 'main'
-        run: |
-          set -euo pipefail
-          # Use the same SP from AZURE_CREDENTIALS
-          CLIENT_ID=$(jq -r '.clientId' <<< '${{ secrets.AZURE_CREDENTIALS }}')
-          CLIENT_SECRET=$(jq -r '.clientSecret' <<< '${{ secrets.AZURE_CREDENTIALS }}')
-          TENANT_ID=$(jq -r '.tenantId' <<< '${{ secrets.AZURE_CREDENTIALS }}')
-
-          fab config set encryption_fallback_enabled true
-          fab auth login -u "${CLIENT_ID}" -p "${CLIENT_SECRET}" --tenant "${TENANT_ID}"
-
-      - name: Discover PROD SQL endpoint id & inject into parameter.yml
-        if: github.ref_name == 'main'
-        env:
-          WORKSPACE_ID: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}
-          LAKEHOUSE_DISPLAY_NAME: ${{ env.LAKEHOUSE_DISPLAY_NAME }}
-        run: |
-          set -euo pipefail
-          echo "🔎 Querying SQL Endpoints in workspace ${WORKSPACE_ID}"
-          # fetch SQLEndpoint items
-          RESP=$(fab api -X get "/workspaces/${WORKSPACE_ID}/items?itemType=SQLEndpoint")
-          DBID=$(echo "$RESP" | jq -r --arg name "${LAKEHOUSE_DISPLAY_NAME}" '.text.value[] | select(.displayName==$name and .type=="SQLEndpoint") | .id' | head -n1)
-
-          if [[ -z "${DBID}" || "${DBID}" == "null" ]]; then
-            echo "❌ Could not find SQLEndpoint id for Lakehouse '${LAKEHOUSE_DISPLAY_NAME}' in workspace ${WORKSPACE_ID}"
-            echo "Response was:"
-            echo "$RESP"
-            exit 1
-          fi
-
-          echo "✅ Found PROD SQL endpoint id: ${DBID:0:4}… (masked)"
-          # Replace placeholder 'databaseid' in parameter.yml with the discovered id
-          sed -i.bak "s/\"databaseid\")/\"${DBID}\")/g" parameter.yml
-          sed -i.bak "s/\"databaseid\" )/\"${DBID}\" )/g" parameter.yml
-
-      # ---------- PASS 2: deploy Semantic Models & Reports (now we know the id) ----------
-      - name: Pass 2 · Deploy SM & Reports (rebinding applies)
-        if: github.ref_name == 'dev' || github.ref_name == 'main'
+      # --------------------------
+      # (Your existing Pass 2, etc., can follow here)
+      # --------------------------
+      - name: Pass 2 · Deploy SM & Reports
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
             TARGET_WS="${{ secrets.FABRIC_DEV_WORKSPACE_ID }}"
             TARGET_ENV="DEV"
-            ITEMS="SemanticModel,Report"   # still useful on dev to verify
-          else
+          elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
             TARGET_WS="${{ secrets.FABRIC_PROD_WORKSPACE_ID }}"
             TARGET_ENV="PROD"
-            ITEMS="SemanticModel,Report"
+          else
+            echo "Branch ${GITHUB_REF_NAME} not mapped. Skipping."
+            exit 0
           fi
           echo "🚀 PASS 2 → ${TARGET_ENV} workspace: ${TARGET_WS}"
           python scripts/deploy_fabric_items.py \
             --WorkspaceId "${TARGET_WS}" \
             --Environment "${TARGET_ENV}" \
             --RepositoryDirectory "${GITHUB_WORKSPACE}" \
-            --ItemsInScope "${ITEMS}" \
+            --ItemsInScope "SemanticModel,Report" \
             --Debug
