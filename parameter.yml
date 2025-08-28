@@ -10,14 +10,14 @@ find_replace:
       # workspaceId: DEV → PROD
       - find: '"workspaceId":"${FABRIC_DEV_WORKSPACE_ID}"'
         replace: '"workspaceId":"${FABRIC_PROD_WORKSPACE_ID}"'
-      # lakehouseId (a.k.a. itemId/artifactId): DEV → PROD
+      # lakehouseId (a.k.a. artifactId / itemId): DEV → PROD
       - find: '"artifactId":"${FABRIC_DEV_LAKEHOUSE_ID}"'
         replace: '"artifactId":"${FABRIC_PROD_LAKEHOUSE_ID}"'
-      # If your .pbism includes sqlEndpointId, uncomment the next two lines
+      # If your .pbism includes sqlEndpointId, uncomment the next two lines and ensure secrets exist
       # - find: '"sqlEndpointId":"${FABRIC_DEV_SQL_ID}"'
       #   replace: '"sqlEndpointId":"${FABRIC_PROD_SQL_ID}"'
 
-  # ----- PBIP: JSON (some exports use .json alongside .pbism) -----
+  # ----- PBIP: JSON (some exports include semantic model JSON too) -----
   - environments: ["PROD"]
     file_glob: "**/*.SemanticModel/**/*.json"
     replacements:
@@ -29,7 +29,7 @@ find_replace:
       #   replace: '"sqlEndpointId":"${FABRIC_PROD_SQL_ID}"'
 
   # ----- TMDL: Power Query M connection inside .tmdl -----
-  # Example in your repo:
+  # Example from your repo:
   #   Sql.Database("<DEV_SQL_HOST>", "<DEV_LAKEHOUSE_ID>")
   - environments: ["PROD"]
     file_glob: "**/*.SemanticModel/**/*.tmdl"
