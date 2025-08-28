@@ -5,6 +5,7 @@ on:
     branches:
       - dev
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -15,44 +16,70 @@ jobs:
       # Checkout repo
       # --------------------------
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # --------------------------
       # Login to Azure
+      # (keep using your existing AZURE_CREDENTIALS JSON if it's working)
       # --------------------------
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+          allow-no-subscriptions: true
 
       # --------------------------
       # Setup Python
       # --------------------------
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r scripts/requirements.txt
+        run: |
+          pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+
+      # --------------------------
+      # (Optional) quick discovery to see artifacts
+      # --------------------------
+      - name: Discover candidate artifacts
+        run: |
+          echo "🔎 Notebooks (*.ipynb):"
+          find "${GITHUB_WORKSPACE}" -type f -iname "*.ipynb" | sed 's/^/ - /' || true
+          echo ""
+          echo "🔎 PBIP markers (semanticModel/report defs):"
+          find "${GITHUB_WORKSPACE}" -type f \( -iname "definition.pbir" -o -iname "*.report.json" -o -iname "*.semanticmodel.json" -o -iname "*.pbism.json" \) | sed 's/^/ - /' || true
 
       # --------------------------
       # Deploy to Fabric
       # --------------------------
       - name: Deploy Fabric Artifacts
+        env:
+          # expose all IDs for parameter.yml find_replace (no hardcoding in repo)
+          FABRIC_DEV_WORKSPACE_ID:   ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}
+          FABRIC_PROD_WORKSPACE_ID:  ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}
+          FABRIC_DEV_LAKEHOUSE_ID:   ${{ secrets.FABRIC_DEV_LAKEHOUSE_ID }}
+          FABRIC_PROD_LAKEHOUSE_ID:  ${{ secrets.FABRIC_PROD_LAKEHOUSE_ID }}
+          FABRIC_DEV_SQL_ID:         ${{ secrets.FABRIC_DEV_SQL_ID }}
+          FABRIC_PROD_SQL_ID:        ${{ secrets.FABRIC_PROD_SQL_ID }}
         run: |
+          set -euo pipefail
           if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
             echo "Deploying to DEV workspace..."
             python scripts/deploy_fabric_items.py \
               --WorkspaceId "${{ secrets.FABRIC_DEV_WORKSPACE_ID }}" \
               --Environment "DEV" \
               --RepositoryDirectory "${GITHUB_WORKSPACE}" \
-              --ItemsInScope all
+              --ItemsInScope all \
+              --Debug
           elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
             echo "Deploying to PROD workspace..."
             python scripts/deploy_fabric_items.py \
               --WorkspaceId "${{ secrets.FABRIC_PROD_WORKSPACE_ID }}" \
               --Environment "PROD" \
               --RepositoryDirectory "${GITHUB_WORKSPACE}" \
-              --ItemsInScope all
+              --ItemsInScope all \
+              --Debug
           fi
