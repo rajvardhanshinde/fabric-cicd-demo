@@ -10,18 +10,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # --------------------------
       # Checkout
+      # --------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --------------------------
       # Azure login (SP JSON in AZURE_CREDENTIALS)
+      # --------------------------
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           allow-no-subscriptions: true
 
+      # --------------------------
       # Python
+      # --------------------------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -32,18 +38,10 @@ jobs:
           pip install --upgrade pip
           pip install -r scripts/requirements.txt
 
-      # (Optional) show what we can deploy
-      - name: Discover artifacts
-        run: |
-          echo "🔎 Notebooks:"
-          find "${GITHUB_WORKSPACE}" -type f -iname "*.ipynb" | sed 's/^/ - /' || true
-          echo ""
-          echo "🔎 PBIP / Semantic Model files:"
-          find "${GITHUB_WORKSPACE}" -type f \( -iname "*.pbism" -o -iname "*.json" -o -iname "*.tmdl" \) \
-            | grep -i "SemanticModel" | sed 's/^/ - /' || true
-
-      # Sanity check: required env vars exist (prevents param validation failures)
-      - name: Validate required env for parameter.yml
+      # --------------------------
+      # Debug · env presence & masked fingerprints
+      # --------------------------
+      - name: Debug · env presence & fingerprints (masked)
         env:
           FABRIC_DEV_WORKSPACE_ID:  ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}
           FABRIC_PROD_WORKSPACE_ID: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}
@@ -53,12 +51,78 @@ jobs:
           FABRIC_PROD_SQL_HOST:     ${{ secrets.FABRIC_PROD_SQL_HOST }}
         run: |
           set -euo pipefail
+          check() { 
+            local name="$1"; local val="${!name:-}";
+            if [ -z "${val}" ]; then 
+              echo "❌ MISSING $name"; return 1; 
+            else 
+              echo "✅ $name present · len=${#val} · last4=${val: -4}";
+            fi
+          }
+          echo "=== Required variables ==="
+          ok=0
           for v in FABRIC_DEV_WORKSPACE_ID FABRIC_PROD_WORKSPACE_ID FABRIC_DEV_LAKEHOUSE_ID FABRIC_PROD_LAKEHOUSE_ID FABRIC_DEV_SQL_HOST FABRIC_PROD_SQL_HOST; do
-            [ -n "${!v:-}" ] || { echo "❌ Missing $v"; exit 1; }
-            echo "✅ $v present"
+            check "$v" || ok=1
           done
+          if [ "$ok" -ne 0 ]; then exit 1; fi
 
+      # --------------------------
+      # Debug · scan repo for DEV identifiers in PBIP/TMDL
+      # --------------------------
+      - name: Debug · scan repo for DEV identifiers in PBIP/TMDL
+        env:
+          FABRIC_DEV_WORKSPACE_ID:  ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}
+          FABRIC_DEV_LAKEHOUSE_ID:  ${{ secrets.FABRIC_DEV_LAKEHOUSE_ID }}
+          FABRIC_DEV_SQL_HOST:      ${{ secrets.FABRIC_DEV_SQL_HOST }}
+        run: |
+          set -euo pipefail
+
+          echo "=== Candidate PBIP/TMDL files ==="
+          echo "· PBISM files:"
+          find . -type f -iname "*.pbism" | sed 's/^/ - /' || true
+          echo "· JSON files (under SemanticModel):"
+          find . -type f -iname "*.json" | grep -i "SemanticModel" | sed 's/^/ - /' || true
+          echo "· TMDL files:"
+          find . -type f -iname "*.tmdl" | sed 's/^/ - /' || true
+
+          echo ""
+          echo "=== PBISM/JSON: counts of DEV workspaceId/artifactId matches ==="
+          while IFS= read -r f; do
+            cw=$(grep -F -c "\"workspaceId\":\"$FABRIC_DEV_WORKSPACE_ID\"" "$f" || true)
+            ca=$(grep -F -c "\"artifactId\":\"$FABRIC_DEV_LAKEHOUSE_ID\"" "$f" || true)
+            if [ "$cw" != "0" ] || [ "$ca" != "0" ]; then
+              echo " - $f · workspaceId=$cw · artifactId=$ca"
+            fi
+          done < <( (find . -type f -iname "*.pbism"; find . -type f -iname "*.json" | grep -i "SemanticModel") 2>/dev/null )
+
+          echo ""
+          echo "=== TMDL: counts of DEV Sql.Database(host) and LakehouseId matches ==="
+          while IFS= read -r f; do
+            ch=$(grep -F -c "$FABRIC_DEV_SQL_HOST" "$f" || true)
+            cl=$(grep -F -c "$FABRIC_DEV_LAKEHOUSE_ID" "$f" || true)
+            if [ "$ch" != "0" ] || [ "$cl" != "0" ]; then
+              echo " - $f · host=$ch · lakehouseId=$cl"
+            fi
+          done < <(find . -type f -iname "*.tmdl" 2>/dev/null)
+
+          echo ""
+          echo "Note: Values are masked by GitHub; we only show counts to confirm matches."
+
+      # --------------------------
+      # (Optional) Discover artifacts for visibility
+      # --------------------------
+      - name: Discover artifacts
+        run: |
+          echo "🔎 Notebooks (*.ipynb):"
+          find "${GITHUB_WORKSPACE}" -type f -iname "*.ipynb" | sed 's/^/ - /' || true
+          echo ""
+          echo "🔎 PBIP / Semantic Model files:"
+          find "${GITHUB_WORKSPACE}" -type f \( -iname "*.pbism" -o -iname "*.json" -o -iname "*.tmdl" \) \
+            | grep -i "SemanticModel" | sed 's/^/ - /' || true
+
+      # --------------------------
       # Deploy to Fabric (branch → workspace mapping)
+      # --------------------------
       - name: Deploy Fabric Artifacts
         env:
           # expose all IDs/hosts so parameter.yml can substitute them
