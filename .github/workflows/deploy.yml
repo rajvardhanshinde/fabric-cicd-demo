@@ -10,18 +10,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Azure login (using SP JSON stored in AZURE_CREDENTIALS)
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           allow-no-subscriptions: true
 
-      # Setup Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -32,7 +29,7 @@ jobs:
           pip install --upgrade pip
           pip install -r scripts/requirements.txt
 
-      # Debug: confirm secrets exist (masked output)
+      # ---------- DEBUG: confirm all secrets exist (masked) ----------
       - name: Debug · check secrets
         env:
           FABRIC_DEV_WORKSPACE_ID:  ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}
@@ -43,32 +40,37 @@ jobs:
           FABRIC_PROD_SQL_ID:       ${{ secrets.FABRIC_PROD_SQL_ID }}
         run: |
           set -euo pipefail
-          check() {
-            local name="$1"; local val="${!name:-}";
-            if [ -z "${val}" ]; then echo "❌ MISSING $name"; exit 1; fi
-            echo "✅ $name present · len=${#val} · last4=${val: -4}"
-          }
+          check() { local n="$1"; local v="${!n:-}"; [ -n "$v" ] || { echo "❌ MISSING $n"; exit 1; }; echo "✅ $n present · len=${#v} · last4=${v: -4}"; }
           for v in FABRIC_DEV_WORKSPACE_ID FABRIC_PROD_WORKSPACE_ID FABRIC_DEV_SQL_HOST FABRIC_PROD_SQL_HOST FABRIC_DEV_SQL_ID FABRIC_PROD_SQL_ID; do
             check "$v"
           done
 
-      # Debug: show where DEV SQL host/ID appear in TMDL files
+      # ---------- DEBUG: show where DEV host/ID appear in TMDL ----------
       - name: Debug · scan TMDL for DEV host & SQL ID
         env:
           FABRIC_DEV_SQL_HOST: ${{ secrets.FABRIC_DEV_SQL_HOST }}
           FABRIC_DEV_SQL_ID:   ${{ secrets.FABRIC_DEV_SQL_ID }}
         run: |
           set -euo pipefail
-          echo "=== .tmdl files found ==="
+          echo "=== .tmdl files ==="
           find . -type f -iname "*.tmdl" | sed 's/^/ - /' || true
           echo ""
-          echo "=== Files containing DEV SQL host ==="
+          echo "=== files containing DEV SQL host ==="
           grep -RIl --include \*.tmdl "$FABRIC_DEV_SQL_HOST" . | sed 's/^/ - /' || true
           echo ""
-          echo "=== Files containing DEV SQL ID ==="
+          echo "=== files containing DEV SQL endpoint ID ==="
           grep -RIl --include \*.tmdl "$FABRIC_DEV_SQL_ID" . | sed 's/^/ - /' || true
+          echo ""
+          echo "Note: If either list is empty, the find strings won't match."
 
-      # Deploy to Fabric
+      # ---------- (Optional) list PBIP assets for visibility ----------
+      - name: Discover artifacts
+        run: |
+          echo "🔎 Semantic Model files:"
+          find "${GITHUB_WORKSPACE}" -type f \( -iname "*.tmdl" -o -iname "*.pbism" -o -iname "*.json" \) \
+            | grep -i "SemanticModel" | sed 's/^/ - /' || true
+
+      # ---------- Deploy ----------
       - name: Deploy Fabric Artifacts
         env:
           FABRIC_DEV_WORKSPACE_ID:  ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}
