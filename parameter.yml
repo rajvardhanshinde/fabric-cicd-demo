@@ -1,32 +1,14 @@
 # parameter.yml
-# Robust DEV → PROD rebinding for TMDL M connections:
-#   Sql.Database("<DEV_SQL_HOST>", "<DEV_SQL_ID>")
+# Rebind TMDL Sql.Database connections from DEV → PROD during main deploys.
 
 find_replace:
   - environments: ["PROD"]
-    # Be permissive: scan ALL .tmdl files
-    file_glob: "**/*.tmdl"
+    file_glob: "**/*.SemanticModel/**/*.tmdl"
     replacements:
-      # --- 1) SQL endpoint host -----------------------------------------------
-      # Normal path: replace using secrets (preferred)
+      # Swap SQL endpoint hostname
       - find: 'Sql.Database("${FABRIC_DEV_SQL_HOST}"'
         replace: 'Sql.Database("${FABRIC_PROD_SQL_HOST}"'
-      # Safety net: also replace the literal host you showed (exact string)
-      # (Leave as-is if you don't want literal values in repo)
-      - find: 'Sql.Database("U45POLRYDNZUHDEJWN5HOPHDVM-7MW5T5CP7ODEXHL77HJS7H32FI.datawarehouse.fabric.microsoft.com"'
-        replace: 'Sql.Database("${FABRIC_PROD_SQL_HOST}"'
 
-      # --- 2) SQL endpoint ID (second argument) --------------------------------
-      # Normal path: replace using secrets (preferred).
-      # This version tolerates optional space before the closing parenthesis
+      # Swap SQL endpoint Id (second argument)
       - find: '"${FABRIC_DEV_SQL_ID}")'
         replace: '"${FABRIC_PROD_SQL_ID}")'
-      - find: '"${FABRIC_DEV_SQL_ID}" )'
-        replace: '"${FABRIC_PROD_SQL_ID}" )'
-
-      # Safety net: also replace the literal DEV SQL endpoint GUID you pasted
-      # (update this if the GUID changes; or remove it later once secrets work)
-      - find: '"4fbf51c3-a772-4caa-9fd6-782eef0f23b1")'
-        replace: '"${FABRIC_PROD_SQL_ID}")'
-      - find: '"4fbf51c3-a772-4caa-9fd6-782eef0f23b1" )'
-        replace: '"${FABRIC_PROD_SQL_ID}" )'
