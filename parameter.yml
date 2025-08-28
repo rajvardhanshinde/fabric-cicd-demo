@@ -1,11 +1,42 @@
-find_replace:
-  - environments: ["PROD"]
-    file_glob: "order-SM.SemanticModel/**/*.tmdl"
-    replacements:
-      # Swap SQL endpoint hostname
-      - find: 'Sql.Database("U45POLRYDNZUHDEJWN5HOPHDVM-7MW5T5CP7ODEXHL77HJS7H32FI.datawarehouse.fabric.microsoft.com"'
-        replace: 'Sql.Database("${FABRIC_PROD_SQL_HOST}"'
+# parameter.yml
+# Rebind Semantic Models from DEV → PROD during main-branch deploys.
+# Covers PBIP (.pbism / .json) and TMDL (.tmdl with Sql.Database()).
 
-      # Swap Lakehouse ID (second parameter)
-      - find: '"4fbf51c3-a772-4caa-9fd6-782eef0f23b1")'
+find_replace:
+  # ----- PBIP: .pbism -----
+  - environments: ["PROD"]
+    file_glob: "**/*.SemanticModel/**/*.pbism"
+    replacements:
+      # workspaceId: DEV → PROD
+      - find: '"workspaceId":"${FABRIC_DEV_WORKSPACE_ID}"'
+        replace: '"workspaceId":"${FABRIC_PROD_WORKSPACE_ID}"'
+      # lakehouseId (a.k.a. itemId/artifactId): DEV → PROD
+      - find: '"artifactId":"${FABRIC_DEV_LAKEHOUSE_ID}"'
+        replace: '"artifactId":"${FABRIC_PROD_LAKEHOUSE_ID}"'
+      # If your .pbism includes sqlEndpointId, uncomment the next two lines
+      # - find: '"sqlEndpointId":"${FABRIC_DEV_SQL_ID}"'
+      #   replace: '"sqlEndpointId":"${FABRIC_PROD_SQL_ID}"'
+
+  # ----- PBIP: JSON (some exports use .json alongside .pbism) -----
+  - environments: ["PROD"]
+    file_glob: "**/*.SemanticModel/**/*.json"
+    replacements:
+      - find: '"workspaceId":"${FABRIC_DEV_WORKSPACE_ID}"'
+        replace: '"workspaceId":"${FABRIC_PROD_WORKSPACE_ID}"'
+      - find: '"artifactId":"${FABRIC_DEV_LAKEHOUSE_ID}"'
+        replace: '"artifactId":"${FABRIC_PROD_LAKEHOUSE_ID}"'
+      # - find: '"sqlEndpointId":"${FABRIC_DEV_SQL_ID}"'
+      #   replace: '"sqlEndpointId":"${FABRIC_PROD_SQL_ID}"'
+
+  # ----- TMDL: Power Query M connection inside .tmdl -----
+  # Example in your repo:
+  #   Sql.Database("<DEV_SQL_HOST>", "<DEV_LAKEHOUSE_ID>")
+  - environments: ["PROD"]
+    file_glob: "**/*.SemanticModel/**/*.tmdl"
+    replacements:
+      # 1) SQL endpoint host: DEV → PROD
+      - find: 'Sql.Database("${FABRIC_DEV_SQL_HOST}"'
+        replace: 'Sql.Database("${FABRIC_PROD_SQL_HOST}"'
+      # 2) Lakehouse Id (second argument): DEV → PROD
+      - find: '"${FABRIC_DEV_LAKEHOUSE_ID}")'
         replace: '"${FABRIC_PROD_LAKEHOUSE_ID}")'
