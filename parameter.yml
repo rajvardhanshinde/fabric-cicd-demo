@@ -1,14 +1,24 @@
 # parameter.yml
-# Rebind TMDL Sql.Database connections from DEV → PROD during main deploys.
+# Goal: on PROD deploy, set the Semantic Model to the PROD SQL endpoint.
+# - The SQL endpoint connection string is replaced dynamically by fabric-cicd.
+# - The SQL endpoint database id is injected by the workflow between pass 1 and pass 2.
 
 find_replace:
+  # 1) Replace the SQL endpoint connection string in TMDL (host). This uses a dynamic value.
   - environments: ["PROD"]
-    file_glob: "**/*.SemanticModel/**/*.tmdl"
+    file_glob: "**/*.tmdl"
+    # In your repo, TMDL has: Sql.Database("<dev-host>", "<dev-sql-endpoint-id>")
+    # We swap ONLY the host here using a dynamic value from the PROD Lakehouse item.
+    # NOTE: ***Change LakehouseDisplayName*** to your Lakehouse's display name in PROD.
     replacements:
-      # Swap SQL endpoint hostname
-      - find: 'Sql.Database("${FABRIC_DEV_SQL_HOST}"'
-        replace: 'Sql.Database("${FABRIC_PROD_SQL_HOST}"'
+      - find: 'Sql.Database("'
+        replace: 'Sql.Database("$items.Lakehouse.${LAKEHOUSE_DISPLAY_NAME}.sqlendpoint"'
 
-      # Swap SQL endpoint Id (second argument)
-      - find: '"${FABRIC_DEV_SQL_ID}")'
-        replace: '"${FABRIC_PROD_SQL_ID}")'
+  # 2) Replace the SQL endpoint database id (second argument in Sql.Database):
+  #    We leave a placeholder 'databaseid' that will be programmatically replaced
+  #    by the workflow (with the actual PROD SQL endpoint id) between pass 1 & pass 2.
+  - environments: ["PROD"]
+    file_glob: "**/*.tmdl"
+    replacements:
+      - find: '"databaseid")'
+        replace: '"${PROD_SQL_ENDPOINT_ID}")'
