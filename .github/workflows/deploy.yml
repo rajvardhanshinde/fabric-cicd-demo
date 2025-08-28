@@ -1,102 +1,117 @@
-name: Deploy to Fabric
+name: Deploy to Fabric (double-tap Direct Lake)
 
 on:
   push:
     branches: [ dev, main ]
   workflow_dispatch:
 
+env:
+  # Change this to your Lakehouse display name as it appears in the workspace
+  LAKEHOUSE_DISPLAY_NAME: "sample_LH"
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
+      # Azure auth for fabric-cicd (your existing SP JSON)
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           allow-no-subscriptions: true
 
+      # Python toolchain (fabric-cicd + Fabric CLI)
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install libs (fabric-cicd + Fabric CLI)
         run: |
-          pip install --upgrade pip
-          pip install -r scripts/requirements.txt
+          python -m pip install --upgrade pip
+          pip install fabric-cicd ms-fabric-cli
 
-      # ---------- DEBUG: confirm all secrets exist (masked) ----------
-      - name: Debug · check secrets
-        env:
-          FABRIC_DEV_WORKSPACE_ID:  ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}
-          FABRIC_PROD_WORKSPACE_ID: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}
-          FABRIC_DEV_SQL_HOST:      ${{ secrets.FABRIC_DEV_SQL_HOST }}
-          FABRIC_PROD_SQL_HOST:     ${{ secrets.FABRIC_PROD_SQL_HOST }}
-          FABRIC_DEV_SQL_ID:        ${{ secrets.FABRIC_DEV_SQL_ID }}
-          FABRIC_PROD_SQL_ID:       ${{ secrets.FABRIC_PROD_SQL_ID }}
-        run: |
-          set -euo pipefail
-          check() { local n="$1"; local v="${!n:-}"; [ -n "$v" ] || { echo "❌ MISSING $n"; exit 1; }; echo "✅ $n present · len=${#v} · last4=${v: -4}"; }
-          for v in FABRIC_DEV_WORKSPACE_ID FABRIC_PROD_WORKSPACE_ID FABRIC_DEV_SQL_HOST FABRIC_PROD_SQL_HOST FABRIC_DEV_SQL_ID FABRIC_PROD_SQL_ID; do
-            check "$v"
-          done
-
-      # ---------- DEBUG: show where DEV host/ID appear in TMDL ----------
-      - name: Debug · scan TMDL for DEV host & SQL ID
-        env:
-          FABRIC_DEV_SQL_HOST: ${{ secrets.FABRIC_DEV_SQL_HOST }}
-          FABRIC_DEV_SQL_ID:   ${{ secrets.FABRIC_DEV_SQL_ID }}
-        run: |
-          set -euo pipefail
-          echo "=== .tmdl files ==="
-          find . -type f -iname "*.tmdl" | sed 's/^/ - /' || true
-          echo ""
-          echo "=== files containing DEV SQL host ==="
-          grep -RIl --include \*.tmdl "$FABRIC_DEV_SQL_HOST" . | sed 's/^/ - /' || true
-          echo ""
-          echo "=== files containing DEV SQL endpoint ID ==="
-          grep -RIl --include \*.tmdl "$FABRIC_DEV_SQL_ID" . | sed 's/^/ - /' || true
-          echo ""
-          echo "Note: If either list is empty, the find strings won't match."
-
-      # ---------- (Optional) list PBIP assets for visibility ----------
-      - name: Discover artifacts
-        run: |
-          echo "🔎 Semantic Model files:"
-          find "${GITHUB_WORKSPACE}" -type f \( -iname "*.tmdl" -o -iname "*.pbism" -o -iname "*.json" \) \
-            | grep -i "SemanticModel" | sed 's/^/ - /' || true
-
-      # ---------- Deploy ----------
-      - name: Deploy Fabric Artifacts
-        env:
-          FABRIC_DEV_WORKSPACE_ID:  ${{ secrets.FABRIC_DEV_WORKSPACE_ID }}
-          FABRIC_PROD_WORKSPACE_ID: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}
-          FABRIC_DEV_SQL_HOST:      ${{ secrets.FABRIC_DEV_SQL_HOST }}
-          FABRIC_PROD_SQL_HOST:     ${{ secrets.FABRIC_PROD_SQL_HOST }}
-          FABRIC_DEV_SQL_ID:        ${{ secrets.FABRIC_DEV_SQL_ID }}
-          FABRIC_PROD_SQL_ID:       ${{ secrets.FABRIC_PROD_SQL_ID }}
+      # ---------- PASS 1: deploy everything EXCEPT Semantic Models & Reports ----------
+      - name: Pass 1 · Deploy infra (no SM/Reports)
+        if: github.ref_name == 'dev' || github.ref_name == 'main'
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
-            echo "🚀 Deploying to DEV workspace..."
-            python scripts/deploy_fabric_items.py \
-              --WorkspaceId "${{ secrets.FABRIC_DEV_WORKSPACE_ID }}" \
-              --Environment "DEV" \
-              --RepositoryDirectory "${GITHUB_WORKSPACE}" \
-              --ItemsInScope all \
-              --Debug
-          elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
-            echo "🚀 Deploying to PROD workspace..."
-            python scripts/deploy_fabric_items.py \
-              --WorkspaceId "${{ secrets.FABRIC_PROD_WORKSPACE_ID }}" \
-              --Environment "PROD" \
-              --RepositoryDirectory "${GITHUB_WORKSPACE}" \
-              --ItemsInScope all \
-              --Debug
+            TARGET_WS="${{ secrets.FABRIC_DEV_WORKSPACE_ID }}"
+            TARGET_ENV="DEV"
           else
-            echo "⚠️ Branch ${GITHUB_REF_NAME} not mapped. Skipping."
+            TARGET_WS="${{ secrets.FABRIC_PROD_WORKSPACE_ID }}"
+            TARGET_ENV="PROD"
           fi
+
+          echo "🚀 PASS 1 → ${TARGET_ENV} workspace: ${TARGET_WS}"
+          # Limit item types so Lakehouse & dependencies go first; SM/Reports later
+          python scripts/deploy_fabric_items.py \
+            --WorkspaceId "${TARGET_WS}" \
+            --Environment "${TARGET_ENV}" \
+            --RepositoryDirectory "${GITHUB_WORKSPACE}" \
+            --ItemsInScope "Notebook,DataPipeline,Lakehouse,DataWarehouse,SQLScript" \
+            --Debug
+
+      # ---------- Only on PROD promotion (main): discover PROD SQL endpoint id ----------
+      - name: FAB login for Fabric CLI (SP)
+        if: github.ref_name == 'main'
+        run: |
+          set -euo pipefail
+          # Use the same SP from AZURE_CREDENTIALS
+          CLIENT_ID=$(jq -r '.clientId' <<< '${{ secrets.AZURE_CREDENTIALS }}')
+          CLIENT_SECRET=$(jq -r '.clientSecret' <<< '${{ secrets.AZURE_CREDENTIALS }}')
+          TENANT_ID=$(jq -r '.tenantId' <<< '${{ secrets.AZURE_CREDENTIALS }}')
+
+          fab config set encryption_fallback_enabled true
+          fab auth login -u "${CLIENT_ID}" -p "${CLIENT_SECRET}" --tenant "${TENANT_ID}"
+
+      - name: Discover PROD SQL endpoint id & inject into parameter.yml
+        if: github.ref_name == 'main'
+        env:
+          WORKSPACE_ID: ${{ secrets.FABRIC_PROD_WORKSPACE_ID }}
+          LAKEHOUSE_DISPLAY_NAME: ${{ env.LAKEHOUSE_DISPLAY_NAME }}
+        run: |
+          set -euo pipefail
+          echo "🔎 Querying SQL Endpoints in workspace ${WORKSPACE_ID}"
+          # fetch SQLEndpoint items
+          RESP=$(fab api -X get "/workspaces/${WORKSPACE_ID}/items?itemType=SQLEndpoint")
+          DBID=$(echo "$RESP" | jq -r --arg name "${LAKEHOUSE_DISPLAY_NAME}" '.text.value[] | select(.displayName==$name and .type=="SQLEndpoint") | .id' | head -n1)
+
+          if [[ -z "${DBID}" || "${DBID}" == "null" ]]; then
+            echo "❌ Could not find SQLEndpoint id for Lakehouse '${LAKEHOUSE_DISPLAY_NAME}' in workspace ${WORKSPACE_ID}"
+            echo "Response was:"
+            echo "$RESP"
+            exit 1
+          fi
+
+          echo "✅ Found PROD SQL endpoint id: ${DBID:0:4}… (masked)"
+          # Replace placeholder 'databaseid' in parameter.yml with the discovered id
+          sed -i.bak "s/\"databaseid\")/\"${DBID}\")/g" parameter.yml
+          sed -i.bak "s/\"databaseid\" )/\"${DBID}\" )/g" parameter.yml
+
+      # ---------- PASS 2: deploy Semantic Models & Reports (now we know the id) ----------
+      - name: Pass 2 · Deploy SM & Reports (rebinding applies)
+        if: github.ref_name == 'dev' || github.ref_name == 'main'
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
+            TARGET_WS="${{ secrets.FABRIC_DEV_WORKSPACE_ID }}"
+            TARGET_ENV="DEV"
+            ITEMS="SemanticModel,Report"   # still useful on dev to verify
+          else
+            TARGET_WS="${{ secrets.FABRIC_PROD_WORKSPACE_ID }}"
+            TARGET_ENV="PROD"
+            ITEMS="SemanticModel,Report"
+          fi
+          echo "🚀 PASS 2 → ${TARGET_ENV} workspace: ${TARGET_WS}"
+          python scripts/deploy_fabric_items.py \
+            --WorkspaceId "${TARGET_WS}" \
+            --Environment "${TARGET_ENV}" \
+            --RepositoryDirectory "${GITHUB_WORKSPACE}" \
+            --ItemsInScope "${ITEMS}" \
+            --Debug
