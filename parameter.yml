@@ -1,1 +1,19 @@
-find_replace: []
+# parameter.yml
+# Ensures Semantic Models stay connected to the right Lakehouse
+# by swapping DEV IDs with PROD IDs during main branch deployments.
+
+find_replace:
+  - environments: ["PROD"]
+    file_glob: "reports/**/semanticModel/*.json"
+    replacements:
+      # Workspace ID replacement
+      - find: '"workspaceId":"${FABRIC_DEV_WORKSPACE_ID}"'
+        replace: '"workspaceId":"${FABRIC_PROD_WORKSPACE_ID}"'
+
+      # Lakehouse ID replacement
+      - find: '"artifactId":"${FABRIC_DEV_LAKEHOUSE_ID}"'
+        replace: '"artifactId":"${FABRIC_PROD_LAKEHOUSE_ID}"'
+
+      # SQL Endpoint ID replacement
+      - find: '"sqlEndpointId":"${FABRIC_DEV_SQL_ID}"'
+        replace: '"sqlEndpointId":"${FABRIC_PROD_SQL_ID}"'
